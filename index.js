@@ -76,7 +76,7 @@ const upload = multer({
 
 /* ENDPOINT */
 
-const REMOTE_UPLOAD_URL = process.env.REMOTE_UPLOAD_URL || "https://seu-servidor.com/api/lead-upload";
+const REMOTE_UPLOAD_URL = process.env.REMOTE_UPLOAD_URL || "https://rj-contabilidade-backend.onrender.com/api/lead-upload";
 
 app.post("/api/lead-upload", upload.array("files[]", 3), async (req, res) => {
   try {
