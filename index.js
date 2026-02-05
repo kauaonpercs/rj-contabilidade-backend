@@ -24,7 +24,8 @@ app.use(cors({
     "http://localhost:5173",
     "http://localhost:3000",
     "https://incomparable-starlight-9e752b.netlify.app",
-    "https://kauaonpercs.github.io"
+    "https://kauaonpercs.github.io",
+    "https://6984c9dc88d77c4359731d10--dulcet-sorbet-e569cd.netlify.app"
   ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["*"],
