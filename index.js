@@ -17,22 +17,35 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+// CORS dinâmico via ENV, com fallback para lista fixa
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim()).filter(Boolean)
+  : [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "https://incomparable-starlight-9e752b.netlify.app",
+      "https://kauaonpercs.github.io",
+      "https://6984c9dc88d77c4359731d10--dulcet-sorbet-e569cd.netlify.app"
+    ];
+
 app.use(helmet());
 
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://incomparable-starlight-9e752b.netlify.app",
-    "https://kauaonpercs.github.io",
-    "https://6984c9dc88d77c4359731d10--dulcet-sorbet-e569cd.netlify.app"
-  ],
+  origin: (origin, callback) => {
+    // permitir requests sem origin (ex: curl, ferramentas internas)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("Origin não permitido pelo CORS"));
+  },
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["*"],
   credentials: true
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -47,6 +60,17 @@ if (!fs.existsSync("uploads")) {
 
 /* MULTER */
 
+const ALLOWED_MIMETYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/png",
+  "image/jpeg",
+  "text/plain"
+];
+
+const MAX_FILE_SIZE_MB = Number(process.env.MAX_FILE_SIZE_MB || 10);
+
 const storage = multer.diskStorage({
   destination: "uploads/",
   filename: (req, file, cb) => {
@@ -56,19 +80,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
   fileFilter(req, file, cb) {
-    const allowed = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "image/png",
-      "image/jpeg",
-      "text/plain"
-    ];
-
-    if (!allowed.includes(file.mimetype)) {
-      return cb(new Error("Tipo não permitido"));
+    if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
+      return cb(new Error("Tipo de arquivo não permitido"));
     }
 
     cb(null, true);
@@ -81,6 +96,11 @@ const REMOTE_UPLOAD_URL = process.env.REMOTE_UPLOAD_URL || "https://rj-contabili
 
 app.post("/api/lead-upload", upload.array("files[]", 3), async (req, res) => {
   try {
+    // validação básica: pelo menos 1 arquivo enviado
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ ok: false, error: "Nenhum arquivo enviado" });
+    }
+
     // Se ENV está em modo teste (sem URL remota real), retornar sucesso local
     if (!process.env.REMOTE_UPLOAD_URL || process.env.REMOTE_UPLOAD_URL.includes("unique-id")) {
       return res.status(200).json({ 
@@ -106,7 +126,7 @@ app.post("/api/lead-upload", upload.array("files[]", 3), async (req, res) => {
     });
 
     // enviar para o remoto
-    const response = await fetch(process.env.REMOTE_UPLOAD_URL, {
+    const response = await fetch(REMOTE_UPLOAD_URL, {
       method: "POST",
       headers: form.getHeaders(),
       body: form
@@ -126,6 +146,7 @@ app.post("/api/lead-upload", upload.array("files[]", 3), async (req, res) => {
 
     return res.status(response.status || 500).json(json || { ok: false, status: response.status });
   } catch (err) {
+    console.error("Erro no upload de lead:", err);
     // limpar arquivos locais em caso de erro
     if (req.files) {
       req.files.forEach(f => fs.unlink(f.path, () => {}));
@@ -137,7 +158,12 @@ app.post("/api/lead-upload", upload.array("files[]", 3), async (req, res) => {
 /* HANDLER DE ERRO */
 
 app.use((err, req, res, next) => {
-  res.status(400).json({ ok: false, error: err.message });
+  console.error("Erro de middleware:", err);
+  const status = err.message && err.message.includes("CORS")
+    ? 403
+    : 400;
+
+  res.status(status).json({ ok: false, error: err.message });
 });
 
 /* START */
